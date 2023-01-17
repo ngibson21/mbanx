@@ -1,0 +1,29 @@
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: |
+
+  AWS ACM For CloudFront for US-EAST-1 validation DNS records resources for an environment.
+
+Parameters:
+
+  Domain:
+    Description: The domain of the environment
+    Type: String
+
+  PublicHostedZone:
+    Type: String
+    Description: Public HostedZone ID
+
+Resources:
+  # Request Public ACM Certificate for CloudFront
+
+  CFPublicACM:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub '${Domain}'
+      SubjectAlternativeNames:
+        - !Sub '*.${Domain}'
+      DomainValidationOptions:
+        - DomainName: !Sub '${Domain}'
+          HostedZoneId: !Ref PublicHostedZone
+      ValidationMethod: DNS

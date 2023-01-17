@@ -1,0 +1,261 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Web self-service App
+
+Parameters:
+
+  CertificateARN:
+    Description: ARN of the certificate to use for the distribution.
+    Default: arn:aws:acm:us-east-1:729842399405:certificate/35895277-3efc-4d87-b711-33072f6d4865
+    Type: String
+
+  HostedZoneID:
+    Description: Route 53 Hosted Zone ID of the domain
+    Default:  Z1G8JGY64N6OQ2
+    Type: String
+
+  ServiceDomainName:
+    Description: The domain name of the service, used for adding a forwarding rule on the load balancer.
+    Default: www.dev.mbanq.cloud
+    Type: String
+
+  WebSecurityResponseHeadersVersion:
+   Description: The ARN of the web security filter
+   Type: String
+
+  ServiceName:
+    Description: Name of the service
+    Default: www
+    Type: String
+
+  EnvironmentClass:
+    AllowedValues: [Development, Staging, Production]
+    Default: Development
+    Description: Class of the environment
+    Type: String
+
+  Domain:
+    Description: The domain for the environment
+    Default: dev.mbanq.cloud
+    Type: String
+
+Mappings:
+
+  EnvironmentClassMap:
+    Development:
+      ExpirationInDays: 5
+    Staging:
+      ExpirationInDays: 7
+    Production:
+      ExpirationInDays: 14
+
+Resources:
+
+  # CloudFront Distribution for the Web App
+  Distribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases:
+        - !Ref ServiceDomainName
+        CustomErrorResponses:
+        # Redirects needed for single page applications
+        # We map the error codes of 403 and 404 to the 'default' path of '/', served by 'index.html'
+        - ErrorCode: 403
+          ResponseCode: 200
+          ResponsePagePath: /
+        - ErrorCode: 404
+          ResponseCode: 200
+          ResponsePagePath: /
+        # Redirect some 4XX and 50X error codes to error page
+        - ErrorCode: 400
+          ResponseCode: 400
+          ResponsePagePath: /error.html
+        - ErrorCode: 405
+          ResponseCode: 405
+          ResponsePagePath: /error.html
+        - ErrorCode: 414
+          ResponseCode: 414
+          ResponsePagePath: /error.html
+        - ErrorCode: 500
+          ResponseCode: 500
+          ResponsePagePath: /error.html
+        - ErrorCode: 501
+          ResponseCode: 501
+          ResponsePagePath: /error.html
+        - ErrorCode: 502
+          ResponseCode: 502
+          ResponsePagePath: /error.html
+        - ErrorCode: 503
+          ResponseCode: 503
+          ResponsePagePath: /error.html
+        - ErrorCode: 504
+          ResponseCode: 504
+          ResponsePagePath: /error.html
+        DefaultCacheBehavior:
+          Compress: true
+          DefaultTTL: 86400
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          MinTTL: 120
+          TargetOriginId: S3
+          ViewerProtocolPolicy: redirect-to-https
+          LambdaFunctionAssociations:
+            - EventType: origin-response
+              LambdaFunctionARN: !Ref WebSecurityResponseHeadersVersion
+        DefaultRootObject: index.html
+        Enabled: true
+        HttpVersion: http2
+        IPV6Enabled: true
+        Origins:
+        - S3OriginConfig:
+            OriginAccessIdentity: ''
+          DomainName: !GetAtt
+          - S3Bucket
+          - DomainName
+          Id: S3
+        PriceClass: PriceClass_All
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateARN
+          MinimumProtocolVersion: TLSv1.2_2018
+          SslSupportMethod: sni-only
+
+  RecordSet:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneId: !Ref HostedZoneID
+      RecordSets:
+      - Name: !Ref ServiceDomainName
+        Type: A
+        AliasTarget:
+          HostedZoneId: Z2FDTNDATAQYW2
+          DNSName: !GetAtt Distribution.DomainName
+
+  S3Bucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Ref ServiceDomainName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LoggingConfiguration:
+        DestinationBucketName: !Ref S3BucketServerLogs
+        LogFilePrefix: !Sub /logs/${S3BucketServerLogs}/
+
+  S3BucketServerLogs:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub ${ServiceName}-logging.${Domain}-${AWS::Region}
+      AccessControl: LogDeliveryWrite
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: !Sub ${ServiceName}-logging-rule.${Domain}-${AWS::Region}
+            ExpirationInDays: !FindInMap [EnvironmentClassMap, !Ref EnvironmentClass, ExpirationInDays]
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: !FindInMap [EnvironmentClassMap, !Ref EnvironmentClass, ExpirationInDays]
+            Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Description
+          Value: S3 Server Access Logs
+
+  # Redirect none-WWW to wwww
+  # CloudFront Distribution for None-wwww
+
+  NoneWWWDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Aliases:
+        - !Ref Domain
+        DefaultCacheBehavior:
+          Compress: true
+          DefaultTTL: 86400
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: none
+          MinTTL: 120
+          TargetOriginId: !Ref S3BucketRedirecttoWWW
+          ViewerProtocolPolicy: redirect-to-https
+        DefaultRootObject: index.html
+        Enabled: true
+        HttpVersion: http2
+        IPV6Enabled: true
+        Origins:
+        - CustomOriginConfig:
+            OriginProtocolPolicy: 'http-only'
+          DomainName: !Sub ${S3BucketRedirecttoWWW}.s3-website-${AWS::Region}.amazonaws.com
+          Id: !Ref S3BucketRedirecttoWWW
+        PriceClass: PriceClass_All
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateARN
+          MinimumProtocolVersion: TLSv1.2_2018
+          SslSupportMethod: sni-only
+
+  S3BucketRedirecttoWWW:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Ref Domain
+      AccessControl: PublicRead
+      WebsiteConfiguration:
+        RedirectAllRequestsTo:
+          HostName: !Ref ServiceDomainName
+          Protocol: "https"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LoggingConfiguration:
+        DestinationBucketName: !Ref S3BucketRedirectWWWServerLogs
+        LogFilePrefix: !Sub /logs/${S3BucketRedirectWWWServerLogs}/
+
+  S3BucketRedirectWWWServerLogs:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub non-${ServiceName}-logging.${Domain}-${AWS::Region}
+      AccessControl: LogDeliveryWrite
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: !Sub none-${ServiceName}-logging-rule.${Domain}-${AWS::Region}
+            ExpirationInDays: !FindInMap [EnvironmentClassMap, !Ref EnvironmentClass, ExpirationInDays]
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: !FindInMap [EnvironmentClassMap, !Ref EnvironmentClass, ExpirationInDays]
+            Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Description
+          Value: S3 Server Access Logs
+
+  NonWWWRecordSet:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneId: !Ref HostedZoneID
+      RecordSets:
+      - Name: !Ref Domain
+        Type: A
+        AliasTarget:
+          HostedZoneId: Z2FDTNDATAQYW2
+          DNSName: !GetAtt NoneWWWDistribution.DomainName

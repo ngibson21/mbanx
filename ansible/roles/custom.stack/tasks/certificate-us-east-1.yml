@@ -1,0 +1,17 @@
+- name: 'Retrieve the hostedzone id for {{ root_domain }}'
+  community.aws.route53_zone:
+    zone: '{{ root_domain }}'
+  register: root_hosted_zone_id
+
+- name: 'Cloudformation stack is deploying AWS ACM for {{ app_env }}...'
+  amazon.aws.cloudformation:
+    stack_name: 'us-east-1-service-acm-{{ app_env }}'
+    state: "present"
+    region: 'us-east-1'
+    disable_rollback: false
+    template_body: "{{ lookup('template', 'certs-cloudfront-cfn.yml') }}"
+    template_parameters:
+      Domain: '{{ domain }}'
+      PublicHostedZone: '{{ root_hosted_zone_id.result.zone_id }}'
+    capabilities: CAPABILITY_AUTO_EXPAND
+    termination_protection: yes

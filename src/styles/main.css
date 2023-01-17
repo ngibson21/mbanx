@@ -1,0 +1,20 @@
+.v-application {
+  background: var(--v-background-base) !important
+}
+.v-card, .v-list, .v-navigation-drawer, .v-data-table, .v-expansion-panel, .v-bottom-navigation, .v-item-group {
+  background-color: var(--v-surface-base) !important
+}
+.flex-1{
+  -ms-flex: 1;  /* IE 10 */
+  flex: 1;
+}
+.v-card__title {
+  word-break: break-word !important;
+}
+
+/* pagination datatable is not align well in mobile view */
+@media screen and (max-width: 375px) {
+  .v-data-footer__pagination{
+    margin: 0px !important
+  }
+}

@@ -1,0 +1,9 @@
+- name: Looking environment for deploying stack
+  set_fact:
+    service_name: "{{ lookup('env', 'SERVICE_NAME') }}"
+    domain: "{{ lookup('env', 'DOMAIN') }}"
+    root_domain: "{{ lookup('env', 'ROOT_DOMAIN') }}"
+    environment_class: "{{ lookup('env', 'EnvironmentClass') }}"
+    aws_region: "{{ lookup('env', 'AWS_REGION') }}"
+    app_env: "{{ lookup('env', 'APP_ENV') }}"
+    client: "{{ lookup('env', 'CLIENT') }}"

@@ -1,0 +1,63 @@
+variables: &mbanq-variables
+  SERVICE_NAME: www
+
+mbanq:development:
+  inherit:
+    variables: false
+  stage: deploy:mbanq:development
+  # enables tracking which commits are deployed to each environment
+  environment:
+    name: Development
+    url: https://${SERVICE_NAME}.${DOMAIN}
+  only:
+    - develop
+  variables:
+    <<: *mbanq-variables
+    AWS_REGION: eu-west-1
+    APP_ENV: dev
+    DOMAIN: dev.mbanq.cloud
+    EnvironmentClass: Development
+  script:
+    - source "${DEV_ENVIRONMENT}"
+    - bash -e scripts/pipelines/deploy.sh
+
+mbanq:staging:
+  inherit:
+    variables: false
+  stage: deploy:mbanq:staging
+  # enables tracking which commits are deployed to each environment
+  environment:
+    name: Staging
+    url: https://${SERVICE_NAME}.${DOMAIN}
+  only:
+    - master
+  variables:
+    <<: *mbanq-variables
+    AWS_REGION: eu-west-1
+    APP_ENV: stage
+    DOMAIN: stage.mbanq.cloud
+    EnvironmentClass: Staging
+  script:
+    - source "${STAGE_ENVIRONMENT}"
+    - bash -e scripts/pipelines/deploy.sh
+
+mbanq:production:
+  inherit:
+    variables: false
+  stage: deploy:mbanq:production
+  # enables tracking which commits are deployed to each environment
+  environment:
+    name: Production
+    url: https://${SERVICE_NAME}.${DOMAIN}
+  only:
+    - master
+  when: manual
+  variables:
+    <<: *mbanq-variables
+    AWS_REGION: eu-west-1
+    APP_ENV: prod
+    DOMAIN: cloud.mbanq.com
+    EnvironmentClass: Production
+  script:
+    - source "${PROD_ENVIRONMENT}"
+    - bash -e scripts/pipelines/deploy.sh

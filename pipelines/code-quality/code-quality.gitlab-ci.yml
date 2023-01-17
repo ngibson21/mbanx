@@ -1,0 +1,78 @@
+.cf_check_template: &cf_check_template |
+  if [[ ! -d "reports" ]]; then mkdir reports; fi
+  bash -e scripts/test/cfn-nag.sh
+  bash -e scripts/test/cfn-guard.sh
+  bash -e scripts/test/cfn-lint.sh
+
+cfncheck:
+  image: ghcr.io/mbanq/cfn-tools:latest
+  stage: script:check
+  script:
+    - *cf_check_template
+  only:
+    - develop
+    - master
+  artifacts:
+    paths:
+      - ./reports
+
+lint:
+  stage: lint
+  script:
+    - npm ci
+    - npm run lint:nofix
+
+spelling:
+  stage: spelling
+  script:
+    - curl -L -o ./install-misspell.sh https://git.io/misspell
+    - sh ./install-misspell.sh
+    - ./bin/misspell -error src/
+
+audit:
+  stage: audit
+  allow_failure: true
+  script:
+    - npm config set audit-level high
+    - npm audit
+
+unitTests:
+  stage: test:unit
+  script:
+    - npm ci
+    - npm test
+  artifacts:
+    when: always
+    paths:
+      - coverage/
+
+pages:
+  stage: pages
+  dependencies:
+    - unitTests
+  script:
+    - mv coverage/lcov-report/ public/
+  artifacts:
+    paths:
+      - public
+    expire_in: 30 days
+
+shellcheck:
+  image: ghcr.io/mbanq/shellcheck:latest
+  stage: script:check
+  script:
+  - bash -e scripts/test/verify.sh
+
+sonarcheck:
+  image: ghcr.io/mbanq/cfn-tools:latest
+  stage: script:check
+  script:
+    - bash -e scripts/test/metric.sh
+  only:
+    - develop
+
+precommit:
+  image: ghcr.io/mbanq/precommit:latest
+  stage: script:check
+  script:
+    - pre-commit run --all-files

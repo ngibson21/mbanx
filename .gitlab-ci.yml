@@ -1,0 +1,25 @@
+image: ghcr.io/mbanq/nodelts-alpine
+
+stages:
+  - script:check
+  - lint
+  - spelling
+  - audit
+  - test:unit
+  - pages
+  - deploy:mbanq:development
+  - deploy:mbanq:staging
+  - deploy:mbanq:production
+  - deploy:customer:staging
+  - deploy:customer:production
+
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+  - node_modules/
+
+include:
+  - local: 'pipelines/code-quality/code-quality.gitlab-ci.yml'
+  - local: 'pipelines/deployments/mbanq.gitlab-ci.yml'
+  - local: 'pipelines/deployments/customer/staging.gitlab-ci.yml'
+  - local: 'pipelines/deployments/customer/production.gitlab-ci.yml'

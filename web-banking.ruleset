@@ -1,0 +1,4 @@
+
+# CHECK BUCKET HAVE TO BE ENCRYPTED AND RETAINED
+AWS::S3::Bucket .DeletionPolicy == Retain << buckets have to be retained
+AWS::S3::Bucket BucketEncryption == {"ServerSideEncryptionConfiguration":[{"ServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]} << buckets have to be encrypted

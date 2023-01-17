@@ -1,0 +1,107 @@
+- name: Install the package, force upgrade
+  pip:
+    name:
+      - pip
+      - boto3
+    state: latest
+
+- name: Looking environment for deploying stack
+  set_fact:
+    service_name: "{{ lookup('env', 'SERVICE_NAME') }}"
+    domain: "{{ lookup('env', 'DOMAIN') }}"
+    environment_class: "{{ lookup('env', 'EnvironmentClass') }}"
+    aws_region: "{{ lookup('env', 'AWS_REGION') }}"
+    app_env: "{{ lookup('env', 'APP_ENV') }}"
+    client: "{{ lookup('env', 'CLIENT') }}"
+
+- name: Building App ...
+  shell: >
+    npm install;
+    MODE={{ app_env }} npm run build
+
+- name: Building App Asset ...
+  shell: >
+    set -e;
+    echo "copy pwa assets for {{ client }}";
+
+    if [ '{{ client }}' ] && [ -d "assets/{{ client }}" ]; then
+      echo "assets for {{ client }}";
+      rm -r dist/img/icons;
+      cp -r assets/{{ client }}/icons dist/img/;
+
+      echo "update favicon";
+      rm dist/favicon.ico;
+      cp assets/{{ client }}/favicon/favicon.ico dist/;
+
+      echo "update manifest with client names";
+      rm dist/manifest.json;
+      cp assets/{{ client }}/manifest.json dist/;
+    fi
+
+- name: Looking up the aws service arn
+  block:
+    - name: Looking up us-east-1 certification for cloudfront
+      shell: >
+        aws acm list-certificates --region us-east-1 --query 'CertificateSummaryList[?DomainName==`'{{ domain }}'`].CertificateArn' --output text
+      register: certificate_arn
+
+    - name: Looking up us-east-1 websecurity header
+      shell: >
+        aws cloudformation list-exports --region us-east-1 --query "Exports[?Name==\`WebSecurityResponseHeadersVersion\`].Value" --no-paginate --output text
+      register: websecurity_response_header_version
+
+    - name: 'Retrieve the hostedzone id for {{ domain }}'
+      community.aws.route53_zone:
+        zone: '{{ domain }}'
+      register: hosted_zone_id
+
+    - name: Read from variables facts
+      debug:
+        msg:
+        - 'certificate_arn is {{ certificate_arn.stdout }}'
+        - 'hosted_zone_id is {{ hosted_zone_id.result.zone_id }}'
+        - 'websecurity_response_header_version is {{ websecurity_response_header_version.stdout }}'
+
+- name: The cloudformation processing stack ...
+  block:
+    - name: 'Cloudformation stack is deploying a {{ service_name }} on {{ domain }}...'
+      amazon.aws.cloudformation:
+        stack_name: '{{ aws_region }}-service-{{ service_name}}'
+        state: "present"
+        region: '{{ aws_region }}'
+        disable_rollback: false
+        template_body: "{{ lookup('template', 'cfn.yml') }}"
+        template_parameters:
+          CertificateARN: '{{ certificate_arn.stdout }}'
+          HostedZoneID: '{{ hosted_zone_id.result.zone_id }}'
+          ServiceDomainName: '{{ service_name }}.{{ domain }}'
+          Domain: '{{ domain }}'
+          WebSecurityResponseHeadersVersion: '{{ websecurity_response_header_version.stdout }}'
+          EnvironmentClass: '{{ environment_class }}'
+        capabilities: CAPABILITY_NAMED_IAM
+        termination_protection: yes
+
+- name: 'Syncing files {{ app_env }} to S3 ...'
+  community.aws.s3_sync:
+    bucket: '{{ service_name }}.{{ domain }}'
+    permission: public-read
+    file_root: ../dist
+    delete: yes
+
+- name: Getting the list of cloudformation distribution id
+  shell: >
+    aws cloudfront list-distributions --query 'DistributionList.Items[?Aliases.Items[?starts_with(@, `'{{ service_name }}.{{ domain }}'`)]].Id' --output text
+  register: distribution_id
+
+- name: Create a batch of invalidations using a distribution_id for a reference
+  community.aws.cloudfront_invalidation:
+    distribution_id: "{{ item }}"
+    target_paths:
+      - '/*'
+  with_items:
+    - "{{ distribution_id.stdout_lines }}"
+
+- name: Sucess Deployment
+  debug:
+    msg:
+    - "🚀 🚀 🚀 🚀 🚀 🚀 🚀"

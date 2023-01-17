@@ -1,0 +1,18 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v3.4.0
+    hooks:
+    -   id: check-added-large-files
+        exclude_types: [javascript]
+    -   id: check-executables-have-shebangs
+        exclude_types: [javascript]
+    -   id: check-merge-conflict
+        exclude_types: [javascript]
+    -   id: end-of-file-fixer
+        exclude_types: [javascript]
+    -   id: trailing-whitespace
+        exclude_types: [javascript]
+    -   id: check-case-conflict
+        exclude_types: [javascript]
